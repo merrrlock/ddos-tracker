@@ -1,9 +1,13 @@
 package main
 
 import (
+	"log"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 type IncomingMetrics struct {
@@ -21,9 +25,20 @@ type CreateServerRequest struct {
 }
 
 func main() {
-	dsn := "host=localhost user=postgres password=root dbname=monitoring_db port=5432 sslmode=disable"
+	if err := godotenv.Load(); err != nil {
+		log.Println("Файл .env не найден, используем системные переменные окружения")
+	}
+
+	dsn := os.Getenv("DB_DSN")
+	if dsn == "" {
+		log.Fatal("Критическая ошибка: не задана переменная DB_DSN")
+	}
 
 	InitDB(dsn)
+	InitRedis()
+
+	StartAlertWorker(time.Minute)
+	StartEmailWorker()
 
 	router := gin.Default()
 

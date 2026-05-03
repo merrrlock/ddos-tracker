@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"time"
 )
@@ -14,18 +15,15 @@ type AlertState struct {
 // Кэш состояний: ключ - ServerID, значение - состояние алерта
 var activeAlerts = make(map[uint]AlertState)
 
-// Пороги срабатывания (позже вынесем в БД)
 const (
 	ThresholdCPU  = 90.0
 	ThresholdRAM  = 85.0
 	ThresholdDisk = 95.0
 )
 
-// Запуск фонового воркера (будет работать параллельно с API)
 func StartAlertWorker(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 
-	// Бесконечный цикл в отдельной горутине
 	go func() {
 		for {
 			select {
@@ -38,10 +36,8 @@ func StartAlertWorker(interval time.Duration) {
 	log.Println("Alert Worker успешно запущен!")
 }
 
-// Основная логика проверки
 func checkMetricsForAlerts() {
 	var servers []Server
-	// Получаем список всех активных серверов
 	if err := DB.Where("status = ?", "Online").Find(&servers).Error; err != nil {
 		log.Println("Ошибка получения серверов для алертов:", err)
 		return
@@ -75,13 +71,45 @@ func checkMetricsForAlerts() {
 	}
 }
 
-func triggerAlert(server Server, metric SystemMetric) {
-	log.Printf("[CRITICAL] Сервер %s (%s) превысил пороги! CPU: %.1f%%, RAM: %.1f%%\n",
-		server.Name, server.IPAddress, metric.CPU, metric.RAM)
+type AlertMessage struct {
+	Type       string  `json:"type"`
+	ServerName string  `json:"server_name"`
+	IPAddress  string  `json:"ip_address"`
+	CPU        float64 `json:"cpu"`
+	RAM        float64 `json:"ram"`
+	Message    string  `json:"message"`
+}
 
+func triggerAlert(server Server, metric SystemMetric) {
+	log.Printf("[CRITICAL] Сервер %s превысил пороги!\n", server.Name)
+
+	msg := AlertMessage{
+		Type:       "CRITICAL",
+		ServerName: server.Name,
+		IPAddress:  server.IPAddress,
+		CPU:        metric.CPU,
+		RAM:        metric.RAM,
+		Message:    "Превышение допустимой нагрузки на ресурсы",
+	}
+
+	jsonData, err := json.Marshal(msg)
+	if err == nil {
+		RDB.Publish(Ctx, "alerts_channel", jsonData)
+	}
 }
 
 func resolveAlert(server Server) {
-	log.Printf("[RESOLVED] Сервер %s (%s) вернулся в штатный режим.\n", server.Name, server.IPAddress)
+	log.Printf("[RESOLVED] Сервер %s вернулся в штатный режим.\n", server.Name)
 
+	msg := AlertMessage{
+		Type:       "RESOLVED",
+		ServerName: server.Name,
+		IPAddress:  server.IPAddress,
+		Message:    "Нагрузка вернулась в норму",
+	}
+
+	jsonData, err := json.Marshal(msg)
+	if err == nil {
+		RDB.Publish(Ctx, "alerts_channel", jsonData)
+	}
 }
