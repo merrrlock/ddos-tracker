@@ -49,6 +49,8 @@ func main() {
 		api.POST("/metrics", receiveMetrics)
 	}
 
+	router.GET("/ws/alerts", WsAlertsHandler)
+
 	router.Run(":8080")
 }
 
