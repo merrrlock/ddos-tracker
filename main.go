@@ -37,10 +37,16 @@ func main() {
 	InitDB(dsn)
 	InitRedis()
 
-	StartAlertWorker(time.Minute)
+	StartAlertWorker(10 * time.Second)
 	StartEmailWorker()
 
 	router := gin.Default()
+
+	router.Static("/static", "./public")
+
+	router.StaticFile("/", "public/index.html")
+
+	router.GET("/ws/alerts", WsAlertsHandler)
 
 	api := router.Group("/api")
 	{
@@ -48,8 +54,6 @@ func main() {
 		api.POST("/servers", createServer)
 		api.POST("/metrics", receiveMetrics)
 	}
-
-	router.GET("/ws/alerts", WsAlertsHandler)
 
 	router.Run(":8080")
 }
