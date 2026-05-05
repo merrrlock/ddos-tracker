@@ -3,21 +3,20 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"os"
 	"time"
 )
 
-// анти-флуд
 type AlertState struct {
-	IsActive  bool
-	LastAlert time.Time
+	IsActive    bool
+	TriggeredAt time.Time
 }
 
-// Кэш состояний: ключ - ServerID, значение - состояние алерта
 var activeAlerts = make(map[uint]AlertState)
 
 const (
 	ThresholdCPU  = 90.0
-	ThresholdRAM  = 85.0
+	ThresholdRAM  = 95.0
 	ThresholdDisk = 95.0
 )
 
@@ -38,35 +37,52 @@ func StartAlertWorker(interval time.Duration) {
 
 func checkMetricsForAlerts() {
 	var servers []Server
-	if err := DB.Where("status = ?", "Online").Find(&servers).Error; err != nil {
-		log.Println("Ошибка получения серверов для алертов:", err)
+	DB.Find(&servers)
+
+	log.Printf("[DEBUG] Воркер запущен. Найдено серверов в БД: %d\n", len(servers))
+
+	promURL := os.Getenv("PROMETHEUS_URL")
+	if promURL == "" {
+		log.Println("Ошибка: не задан PROMETHEUS_URL")
 		return
 	}
 
 	for _, server := range servers {
-		var latestMetric SystemMetric
-
-		result := DB.Where("server_id = ?", server.ID).Order("id desc").First(&latestMetric)
-
-		if result.Error != nil {
+		cpuQuery := `dgop_cpu_usage_percent{server="alexusdot-asustufgaminga15fa506ncrfa506ncr"}`
+		cpuUsage, err := QueryPrometheus(promURL, cpuQuery)
+		if err != nil {
+			log.Printf("[DEBUG] Пропуск сервера %s. Ошибка Prometheus: %v\n", server.IPAddress, err)
 			continue
 		}
 
-		isBreached := latestMetric.CPU > ThresholdCPU ||
-			latestMetric.RAM > ThresholdRAM ||
-			latestMetric.Disk > ThresholdDisk
+		ramQuery := `dgop_memory_used_percent{server="alexusdot-asustufgaminga15fa506ncrfa506ncr"}`
+		ramUsage, err := QueryPrometheus(promURL, ramQuery)
+		if err != nil {
+			log.Printf("[DEBUG] Ошибка получения RAM для %s: %v\n", server.IPAddress, err)
+			continue
+		}
+
+		log.Printf("[DEBUG] Успех! Сервер %s -> CPU: %.2f%%, RAM: %.2f%%\n", server.IPAddress, cpuUsage, ramUsage)
+
+		currentMetric := SystemMetric{
+			CPU: cpuUsage,
+			RAM: ramUsage,
+		}
 
 		state := activeAlerts[server.ID]
 
-		if isBreached && !state.IsActive {
-			triggerAlert(server, latestMetric)
-
-			activeAlerts[server.ID] = AlertState{IsActive: true, LastAlert: time.Now()}
-
-		} else if !isBreached && state.IsActive {
-			resolveAlert(server)
-
-			activeAlerts[server.ID] = AlertState{IsActive: false}
+		if currentMetric.CPU > ThresholdCPU || currentMetric.RAM > ThresholdRAM {
+			if !state.IsActive {
+				log.Printf("🔥 [CRITICAL] СРАБОТАЛ АЛЕРТ! CPU: %.2f%% > Порога %.2f%%", currentMetric.CPU, ThresholdCPU)
+				activeAlerts[server.ID] = AlertState{IsActive: true, TriggeredAt: time.Now()}
+				triggerAlert(server, currentMetric)
+			}
+		} else {
+			if state.IsActive {
+				log.Printf("✅ [RESOLVED] Нагрузка спала. CPU: %.2f%%", currentMetric.CPU)
+				activeAlerts[server.ID] = AlertState{IsActive: false}
+				resolveAlert(server)
+			}
 		}
 	}
 }

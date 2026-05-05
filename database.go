@@ -53,4 +53,13 @@ func InitDB(dsn string) {
 	}
 
 	log.Println("Таблицы успешно синхронизированы.")
+
+	DB.Exec("CREATE EXTENSION IF NOT EXISTS timescaledb;")
+	err = DB.Exec("SELECT create_hypertable('system_metrics', by_range('created_at'), if_not_exists => TRUE);").Error
+	
+	if err != nil {
+		log.Println("Заметка TimescaleDB:", err)
+	} else {
+		log.Println("TimescaleDB: Таблица system_metrics готова к сверхбыстрой записи!")
+	}
 }

@@ -37,7 +37,7 @@ func main() {
 	InitDB(dsn)
 	InitRedis()
 
-	StartAlertWorker(10 * time.Second)
+	StartAlertWorker(5 * time.Second)
 	StartEmailWorker()
 
 	router := gin.Default()
@@ -52,7 +52,6 @@ func main() {
 	{
 		api.GET("/health", healthCheck)
 		api.POST("/servers", createServer)
-		api.POST("/metrics", receiveMetrics)
 	}
 
 	router.Run(":8080")
@@ -87,37 +86,4 @@ func createServer(c *gin.Context) {
 		"server_id": newServer.ID,
 		"api_key":   newServer.APIKey,
 	})
-}
-
-func receiveMetrics(c *gin.Context) {
-	var req IncomingMetrics
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат данных: " + err.Error()})
-		return
-	}
-
-	var server Server
-	result := DB.Where("api_key = ?", req.APIKey).First(&server)
-
-	if result.Error != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный API ключ"})
-		return
-	}
-
-	metric := SystemMetric{
-		ServerID: server.ID,
-		CPU:      req.CPU,
-		RAM:      req.RAM,
-		Disk:     req.Disk,
-		NetIn:    req.NetIn,
-		NetOut:   req.NetOut,
-	}
-
-	if err := DB.Create(&metric).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения метрик"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
