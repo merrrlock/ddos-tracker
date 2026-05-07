@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Monitoring Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #1e1e1e; color: white; }
+        .alert { background: #ff4d4d; padding: 15px; margin-top: 10px; border-radius: 5px; display: none; }
+    </style>
+</head>
+<body>
+    <h1>Панель мониторинга серверов</h1>
+    <div id="alertBox" class="alert"></div>
+
+    <script>
+        const ws = new WebSocket(`ws://${window.location.host}/ws/alerts`);
+        const alertBox = document.getElementById('alertBox');
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === "CRITICAL") {
+                alertBox.style.display = "block";
+                alertBox.innerHTML = `🔥 <b>АЛЕРТ!</b> Сервер ${data.server_name} перегружен! CPU: ${data.cpu}%`;
+            } else if (data.type === "RESOLVED") {
+                alertBox.style.display = "none";
+            }
+        };
+    </script>
+</body>
+</html>
