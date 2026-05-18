@@ -2,29 +2,1200 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Monitoring Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShieldMonitor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; background: #1e1e1e; color: white; }
-        .alert { background: #ff4d4d; padding: 15px; margin-top: 10px; border-radius: 5px; display: none; }
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        :root{
+            --bg:#0a0c0f;--bg2:#0f1216;--bg3:#161a20;--bg4:#1d2229;
+            --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+            --txt:#e8eaed;--txt2:#8b9099;--txt3:#555d68;
+            --accent:#00d4ff;--red:#ff4757;--red-bg:rgba(255,71,87,0.12);
+            --amber:#ffb800;--amber-bg:rgba(255,184,0,0.12);
+            --green:#00e676;--green-bg:rgba(0,230,118,0.1);
+            --blue:#448aff;--blue-bg:rgba(68,138,255,0.12);
+            --mono:'JetBrains Mono',monospace;--ui:'Syne',sans-serif;
+            --r:6px;--r2:10px;
+        }
+        html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--ui);overflow:hidden}
+        .app{display:grid;grid-template-columns:220px 1fr;grid-template-rows:48px 1fr;height:100vh}
+
+        /* TOPBAR */
+        .topbar{
+            grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;
+            padding:0 20px;background:var(--bg2);border-bottom:1px solid var(--border);z-index:10;
+        }
+        .logo{font-family:var(--ui);font-size:15px;font-weight:800;letter-spacing:-0.5px;
+            background:linear-gradient(90deg,var(--accent),#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+        .logo span{font-weight:400;opacity:.5}
+        .topbar-right{display:flex;align-items:center;gap:12px}
+        .conn-status{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--txt3)}
+        .cdot{width:6px;height:6px;border-radius:50%;background:var(--txt3);transition:.3s;flex-shrink:0}
+        .cdot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+        .cdot.err{background:var(--red)}
+        .api-inp{
+            background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);
+            color:var(--txt);font-family:var(--mono);font-size:11px;padding:5px 10px;width:240px;
+        }
+        .api-inp::placeholder{color:var(--txt3)}
+
+        /* SIDEBAR */
+        .sidebar{
+            background:var(--bg2);border-right:1px solid var(--border);
+            display:flex;flex-direction:column;padding:12px 0;overflow-y:auto;
+        }
+        .nav-section{padding:16px 16px 4px;font-size:10px;font-weight:600;letter-spacing:1.5px;color:var(--txt3);text-transform:uppercase}
+        .nav-item{
+            display:flex;align-items:center;gap:10px;padding:9px 16px;
+            font-size:13px;font-weight:500;color:var(--txt2);cursor:pointer;transition:.15s;
+            border-left:2px solid transparent;
+        }
+        .nav-item:hover{color:var(--txt);background:var(--bg3)}
+        .nav-item.active{color:var(--accent);background:rgba(0,212,255,0.06);border-left-color:var(--accent)}
+        .nicon{width:15px;height:15px;flex-shrink:0;opacity:.7}
+        .nav-item.active .nicon{opacity:1}
+
+        /* CONTENT */
+        .content{overflow-y:auto;background:var(--bg)}
+        .page{display:none;padding:24px;animation:fi .18s ease}
+        .page.active{display:block}
+        @keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+        /* PAGE HEADER */
+        .ph{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:22px}
+        .ph h1{font-size:21px;font-weight:700;letter-spacing:-.5px}
+        .ph-sub{font-size:11px;color:var(--txt3);font-family:var(--mono);margin-top:3px}
+        .ph-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
+
+        /* BUTTONS */
+        .btn{font-family:var(--mono);font-size:11px;font-weight:500;padding:6px 12px;
+            border-radius:var(--r);border:1px solid var(--border2);background:transparent;
+            color:var(--txt2);cursor:pointer;transition:.15s;white-space:nowrap}
+        .btn:hover{border-color:var(--accent);color:var(--accent)}
+        .btn:disabled{opacity:.4;cursor:not-allowed}
+        .btn-acc{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,0.08)}
+        .btn-acc:hover{background:rgba(0,212,255,0.18)}
+        .btn-primary{font-family:var(--mono);font-size:12px;font-weight:600;padding:8px 16px;
+            border-radius:var(--r);background:var(--accent);color:#000;border:none;cursor:pointer;transition:.15s}
+        .btn-primary:hover{background:#33ddff}
+        .btn-primary:disabled{opacity:.4;cursor:not-allowed}
+        .btn-danger{border-color:var(--red);color:var(--red);background:var(--red-bg)}
+        .btn-danger:hover{background:rgba(255,71,87,.22)}
+
+        /* KPIS */
+        .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+        .kpi{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:16px 18px;position:relative;overflow:hidden}
+        .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--kc,var(--accent));opacity:.6}
+        .kpi.red{--kc:var(--red)}.kpi.amber{--kc:var(--amber)}.kpi.green{--kc:var(--green)}
+        .kpi-lbl{font-size:10px;color:var(--txt3);font-family:var(--mono);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+        .kpi-val{font-size:26px;font-weight:700;font-family:var(--mono)}
+        .kpi-sub{font-size:10px;color:var(--txt3);margin-top:5px;font-family:var(--mono)}
+
+        /* GRID */
+        .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+        .g21{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
+        .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px}
+
+        /* CARD */
+        .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:16px}
+        .card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+        .card-title{font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.8px;font-family:var(--mono)}
+        .card-link{font-size:11px;color:var(--txt3);cursor:pointer;font-family:var(--mono)}
+        .card-link:hover{color:var(--accent)}
+
+        /* TABLE */
+        .tbl{width:100%;border-collapse:collapse;font-size:12px}
+        .tbl th{text-align:left;padding:7px 10px;font-size:10px;font-weight:600;color:var(--txt3);
+            text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);font-family:var(--mono)}
+        .tbl td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle;font-family:var(--mono)}
+        .tbl tr:last-child td{border-bottom:none}
+        .tbl tr:hover td{background:var(--bg3)}
+
+        /* BADGE */
+        .badge{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;
+            font-weight:600;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px}
+        .b-red{background:var(--red-bg);color:var(--red)}
+        .b-amber{background:var(--amber-bg);color:var(--amber)}
+        .b-green{background:var(--green-bg);color:var(--green)}
+        .b-blue{background:var(--blue-bg);color:var(--blue)}
+        .b-gray{background:var(--bg3);color:var(--txt3)}
+        .bdot{width:5px;height:5px;border-radius:50%;background:currentColor}
+
+        /* PROGRESS */
+        .pbar{display:flex;align-items:center;gap:8px}
+        .pbar-bg{flex:1;height:4px;background:var(--bg4);border-radius:2px;overflow:hidden}
+        .pbar-fill{height:100%;border-radius:2px;transition:width .4s ease}
+        .pbar-val{font-family:var(--mono);font-size:11px;color:var(--txt2);width:32px;text-align:right;flex-shrink:0}
+        .pbar-lbl{font-family:var(--mono);font-size:11px;color:var(--txt3);width:34px;flex-shrink:0}
+
+        /* FORM */
+        .frow{margin-bottom:13px}
+        .flabel{font-family:var(--mono);font-size:10px;color:var(--txt3);margin-bottom:5px;display:block;text-transform:uppercase;letter-spacing:.5px}
+        .finput{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);
+            color:var(--txt);font-family:var(--mono);font-size:12px;padding:8px 10px;transition:.15s}
+        .finput:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,212,255,.1)}
+        .finput::placeholder{color:var(--txt3)}
+        .fgrid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+        /* ALERT ITEM */
+        .ali{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+        .ali:last-child{border:none}
+        .ali-icon{width:22px;height:22px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-top:1px}
+        .ali-body{flex:1}
+        .ali-title{font-size:13px;font-weight:600}
+        .ali-meta{font-family:var(--mono);font-size:11px;color:var(--txt3);margin-top:3px}
+        .ali-time{font-family:var(--mono);font-size:11px;color:var(--txt3);flex-shrink:0}
+
+        /* SERVER ROW */
+        .srv{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+        .srv:last-child{border:none}
+        .sdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+        .srv-info{flex:1;min-width:0}
+        .srv-name{font-size:13px;font-weight:600}
+        .srv-meta{font-family:var(--mono);font-size:11px;color:var(--txt3);margin-top:2px}
+        .srv-bars{display:flex;flex-direction:column;gap:4px;width:150px;flex-shrink:0}
+
+        /* CHART */
+        .chart{height:110px;display:flex;align-items:flex-end;gap:3px;background:var(--bg3);
+            border-radius:var(--r);padding:8px}
+        .chart-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px}
+        .chart-bar{width:100%;border-radius:2px 2px 0 0}
+        .chart-lbl{font-family:var(--mono);font-size:9px;color:var(--txt3)}
+        .chart-times{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--txt3);margin-top:6px}
+
+        /* INC CARD */
+        .inc{border-left:3px solid;padding:14px 16px;border-radius:0 var(--r2) var(--r2) 0;
+            background:var(--bg2);border-top:1px solid var(--border);
+            border-right:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:10px}
+        .inc-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+        .inc-title{font-size:13px;font-weight:600}
+        .inc-body{font-size:12px;color:var(--txt2);font-family:var(--mono);line-height:1.5}
+        .inc-actions{display:flex;gap:8px;margin-top:10px}
+
+        /* WARNING BOX */
+        .warn-box{background:var(--amber-bg);border:1px solid rgba(255,184,0,.3);border-radius:var(--r);
+            padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--amber);
+            display:flex;gap:8px;align-items:flex-start;margin-bottom:14px}
+
+        /* EMPTY */
+        .empty{text-align:center;padding:40px;color:var(--txt3);font-family:var(--mono);font-size:12px}
+        .empty-ico{font-size:32px;margin-bottom:10px;opacity:.35}
+
+        /* TABS */
+        .tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:20px}
+        .tab{padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--txt3);
+            border-bottom:2px solid transparent;margin-bottom:-1px;font-family:var(--mono);transition:.15s}
+        .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+        .tab:hover:not(.active){color:var(--txt)}
+
+        /* SPINNER */
+        .spin{width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--accent);
+            border-radius:50%;animation:rot .6s linear infinite;display:inline-block;vertical-align:middle}
+        @keyframes rot{to{transform:rotate(360deg)}}
+
+        /* TOAST */
+        #toasts{position:fixed;bottom:20px;right:20px;z-index:999;display:flex;flex-direction:column;gap:8px}
+        .toast{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r2);
+            padding:12px 16px;font-family:var(--mono);font-size:12px;max-width:300px;
+            animation:ti .2s ease;display:flex;gap:10px}
+        .toast.red{border-left:3px solid var(--red)}
+        .toast.green{border-left:3px solid var(--green)}
+        .toast.amber{border-left:3px solid var(--amber)}
+        @keyframes ti{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+        .t-title{font-weight:600;margin-bottom:2px}
+        .t-body{color:var(--txt2);font-size:11px}
+
+        /* SEP */
+        .sep{height:1px;background:var(--border);margin:16px 0}
+
+        ::-webkit-scrollbar{width:4px}
+        ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
     </style>
 </head>
 <body>
-    <h1>Панель мониторинга серверов</h1>
-    <div id="alertBox" class="alert"></div>
+<div class="app">
 
-    <script>
-        const ws = new WebSocket(`ws://${window.location.host}/ws/alerts`);
-        const alertBox = document.getElementById('alertBox');
+    <!-- ══ TOPBAR ══ -->
+    <header class="topbar">
+        <div class="logo">Shield<span>Monitor</span></div>
+        <div class="topbar-right">
+            <div class="conn-status">
+                <div class="cdot" id="cdot"></div>
+                <span id="clabel">не подключено</span>
+            </div>
+            <input class="api-inp" id="api-url" value="http://localhost:8080" placeholder="http://localhost:8080">
+            <button class="btn btn-acc" onclick="checkHealth()">Подключить</button>
+        </div>
+    </header>
+
+    <!-- ══ SIDEBAR ══ -->
+    <nav class="sidebar">
+        <div class="nav-section">Мониторинг</div>
+        <div class="nav-item active" id="nav-dash" onclick="goPage('dash',this)">
+            <svg class="nicon" viewBox="0 0 16 16" fill="none">
+                <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".8"/>
+                <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".4"/>
+                <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".4"/>
+                <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".4"/>
+            </svg>
+            Дашборд
+        </div>
+        <div class="nav-item" id="nav-servers" onclick="goPage('servers',this)">
+            <svg class="nicon" viewBox="0 0 16 16" fill="none">
+                <rect x="1" y="2" width="14" height="5" rx="1.5" fill="currentColor" opacity=".8"/>
+                <rect x="1" y="9" width="14" height="5" rx="1.5" fill="currentColor" opacity=".4"/>
+                <circle cx="13" cy="4.5" r="1" fill="var(--bg)"/><circle cx="13" cy="11.5" r="1" fill="var(--bg)"/>
+            </svg>
+            Серверы
+        </div>
+        <div class="nav-section">Безопасность</div>
+        <div class="nav-item" id="nav-alerts" onclick="goPage('alerts',this)">
+            <svg class="nicon" viewBox="0 0 16 16" fill="none">
+                <path d="M8 1L1.5 13h13L8 1z" stroke="currentColor" stroke-width="1.5" fill="none" opacity=".8"/>
+                <line x1="8" y1="6" x2="8" y2="9.5" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="8" cy="11.5" r=".8" fill="currentColor"/>
+            </svg>
+            Алерты
+            <span id="nav-alert-cnt" style="display:none;margin-left:auto;font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:20px;background:var(--red-bg);color:var(--red)"></span>
+        </div>
+        <div class="nav-item" id="nav-incidents" onclick="goPage('incidents',this)">
+            <svg class="nicon" viewBox="0 0 16 16" fill="none">
+                <path d="M2 14V5l6-4 6 4v9h-4v-4H6v4H2z" stroke="currentColor" stroke-width="1.3" fill="none" opacity=".8"/>
+            </svg>
+            Инциденты
+        </div>
+        <div class="nav-section">Настройка</div>
+        <div class="nav-item" id="nav-add" onclick="goPage('add',this)">
+            <svg class="nicon" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3" opacity=".7"/>
+                <line x1="8" y1="5" x2="8" y2="11" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+            Добавить сервер
+        </div>
+        <div class="nav-item" id="nav-metrics" onclick="goPage('metrics',this)">
+            <svg class="nicon" viewBox="0 0 16 16" fill="none">
+                <path d="M2 12L5 7l3 3 3-5 3 2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+            </svg>
+            Отправить метрики
+        </div>
+    </nav>
+
+    <!-- ══ CONTENT ══ -->
+    <main class="content">
+
+        <!-- ══ ДАШБОРД ══ -->
+        <div class="page active" id="page-dash">
+            <div class="ph">
+                <div>
+                    <h1>Дашборд</h1>
+                    <div class="ph-sub" id="dash-ts">Ожидание подключения...</div>
+                </div>
+                <div class="ph-actions">
+                    <button class="btn" onclick="refreshDash()"><span class="spin" id="spin-dash" style="display:none"></span> Обновить</button>
+                </div>
+            </div>
+
+            <div class="kpis">
+                <div class="kpi green">
+                    <div class="kpi-lbl">API статус</div>
+                    <div class="kpi-val" id="kpi-api" style="font-size:18px;color:var(--txt3)">offline</div>
+                    <div class="kpi-sub">GET /api/health</div>
+                </div>
+                <div class="kpi red">
+                    <div class="kpi-lbl">Critical алертов</div>
+                    <div class="kpi-val red" id="kpi-critical">0</div>
+                    <div class="kpi-sub">за сессию</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-lbl">Серверов добавлено</div>
+                    <div class="kpi-val" style="color:var(--accent)" id="kpi-servers">0</div>
+                    <div class="kpi-sub">POST /api/servers</div>
+                </div>
+                <div class="kpi amber">
+                    <div class="kpi-lbl">Метрик получено</div>
+                    <div class="kpi-val amber" id="kpi-metrics">0</div>
+                    <div class="kpi-sub">POST /api/metrics</div>
+                </div>
+            </div>
+
+            <div class="g21">
+                <div class="card">
+                    <div class="card-hd">
+                        <div class="card-title">Добавленные серверы</div>
+                        <span class="card-link" onclick="goPage('add',document.getElementById('nav-add'))">+ Добавить →</span>
+                    </div>
+                    <div id="dash-srv-list">
+                        <div class="empty"><div class="empty-ico">⬡</div>Серверов нет — добавьте первый</div>
+                    </div>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:16px">
+                    <div class="card">
+                        <div class="card-hd"><div class="card-title">Последние алерты</div></div>
+                        <div id="dash-alert-feed">
+                            <div class="ali">
+                                <div class="ali-icon" style="background:var(--bg4);color:var(--txt3)">–</div>
+                                <div class="ali-body">
+                                    <div class="ali-title" style="color:var(--txt3);font-size:12px">Ожидание алертов</div>
+                                    <div class="ali-meta">alerts_channel → Redis</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-hd"><div class="card-title">Пороги (alerts.go)</div></div>
+                        <div style="display:flex;flex-direction:column;gap:8px">
+                            <div>
+                                <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--txt3);margin-bottom:4px"><span>ThresholdCPU</span><span style="color:var(--red)">90%</span></div>
+                                <div class="pbar-bg" style="height:4px"><div class="pbar-fill" style="width:90%;background:var(--red)"></div></div>
+                            </div>
+                            <div>
+                                <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--txt3);margin-bottom:4px"><span>ThresholdRAM</span><span style="color:var(--amber)">85%</span></div>
+                                <div class="pbar-bg" style="height:4px"><div class="pbar-fill" style="width:85%;background:var(--amber)"></div></div>
+                            </div>
+                            <div>
+                                <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--txt3);margin-bottom:4px"><span>ThresholdDisk</span><span style="color:var(--accent)">95%</span></div>
+                                <div class="pbar-bg" style="height:4px"><div class="pbar-fill" style="width:95%;background:var(--accent)"></div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ СЕРВЕРЫ ══ -->
+        <div class="page" id="page-servers">
+            <div class="ph">
+                <div><h1>Серверы</h1><div class="ph-sub">Список серверов добавленных за сессию (GET /api/servers не реализован)</div></div>
+                <div class="ph-actions">
+                    <button class="btn btn-acc" onclick="goPage('add',document.getElementById('nav-add'))">+ Добавить</button>
+                </div>
+            </div>
+
+            <div class="warn-box">
+                ⚠ GET /api/servers не реализован в текущей версии бэкенда. Список ниже хранится локально в рамках сессии.
+            </div>
+
+            <div class="card">
+                <div id="srv-table-wrap">
+                    <div class="empty"><div class="empty-ico">⬡</div>Серверов нет</div>
+                </div>
+            </div>
+
+            <!-- Detail panel -->
+            <div id="srv-detail" style="display:none;margin-top:16px">
+                <div class="g21">
+                    <div class="card">
+                        <div class="card-hd">
+                            <div class="card-title" id="det-name">—</div>
+                        </div>
+                        <div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+                            <div class="kpi"><div class="kpi-lbl">CPU</div><div class="kpi-val" id="det-cpu" style="font-size:22px">—</div></div>
+                            <div class="kpi"><div class="kpi-lbl">RAM</div><div class="kpi-val" id="det-ram" style="font-size:22px">—</div></div>
+                            <div class="kpi"><div class="kpi-lbl">Disk</div><div class="kpi-val" id="det-disk" style="font-size:22px">—</div></div>
+                            <div class="kpi"><div class="kpi-lbl">Net In</div><div class="kpi-val" id="det-netin" style="font-size:16px">—</div></div>
+                        </div>
+                        <div class="card-title" style="margin-bottom:10px">История метрик (за сессию)</div>
+                        <div class="chart" id="det-chart"><div style="color:var(--txt3);font-family:var(--mono);font-size:11px;margin:auto">Нет данных</div></div>
+                        <div class="chart-times"><span>давно</span><span></span><span></span><span></span><span>сейчас</span></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-hd"><div class="card-title">Информация</div></div>
+                        <div style="font-family:var(--mono);font-size:11px;line-height:2;color:var(--txt2)">
+                            <div>ID: <span style="color:var(--txt)" id="det-id">—</span></div>
+                            <div>IP: <span style="color:var(--accent)" id="det-ip">—</span></div>
+                            <div>API ключ: <span style="color:var(--txt)" id="det-key" style="word-break:break-all">—</span></div>
+                            <div>Статус: <span id="det-status">—</span></div>
+                            <div>Метрик: <span style="color:var(--green)" id="det-metrics-cnt">0</span></div>
+                        </div>
+                        <div class="sep"></div>
+                        <div class="card-title" style="margin-bottom:8px">Отправить тестовую метрику</div>
+                        <button class="btn-primary" style="width:100%" onclick="sendTestMetric()">Отправить POST /api/metrics</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ АЛЕРТЫ ══ -->
+        <div class="page" id="page-alerts">
+            <div class="ph">
+                <div><h1>Алерты</h1><div class="ph-sub">Получены от бэкенда через polling GET /api/health + логика alerts.go</div></div>
+                <div class="ph-actions">
+                    <button class="btn" onclick="clearAlerts()">Очистить</button>
+                </div>
+            </div>
+
+            <div class="warn-box">
+                ⚠ В бэкенде нет эндпоинта для получения алертов фронтом. Алерты публикуются в Redis и уходят на email (email_worker.go). Фронт показывает алерты, пришедшие через POST /api/metrics и триггеры из сессии.
+            </div>
+
+            <div class="g3" style="margin-bottom:20px">
+                <div class="kpi red"><div class="kpi-lbl">CRITICAL</div><div class="kpi-val red" id="ac-crit">0</div><div class="kpi-sub">за сессию</div></div>
+                <div class="kpi green"><div class="kpi-lbl">RESOLVED</div><div class="kpi-val green" id="ac-res">0</div><div class="kpi-sub">восстановлений</div></div>
+                <div class="kpi"><div class="kpi-lbl">Всего событий</div><div class="kpi-val" style="color:var(--accent)" id="ac-total">0</div></div>
+            </div>
+
+            <div class="card">
+                <div class="card-hd"><div class="card-title">Лента событий</div></div>
+                <div id="alert-log">
+                    <div class="empty"><div class="empty-ico">📡</div>Нет алертов</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ ИНЦИДЕНТЫ ══ -->
+        <div class="page" id="page-incidents">
+            <div class="ph"><div><h1>Инциденты</h1><div class="ph-sub">CRITICAL события из alerts_channel</div></div></div>
+            <div id="inc-list">
+                <div class="empty"><div class="empty-ico">🛡</div>Нет инцидентов</div>
+            </div>
+        </div>
+
+        <!-- ══ ДОБАВИТЬ СЕРВЕР ══ -->
+        <div class="page" id="page-add">
+            <div class="ph"><div><h1>Добавить сервер</h1><div class="ph-sub">POST /api/servers → { name, ip_address }</div></div></div>
+
+            <div class="g2">
+                <div class="card">
+                    <div class="card-hd"><div class="card-title">Новый сервер</div></div>
+                    <div class="frow">
+                        <label class="flabel">Название сервера</label>
+                        <input class="finput" id="new-name" placeholder="prod-web-01">
+                    </div>
+                    <div class="frow">
+                        <label class="flabel">IP-адрес</label>
+                        <input class="finput" id="new-ip" placeholder="192.168.1.100">
+                    </div>
+                    <div class="frow">
+                        <label class="flabel" style="color:var(--txt3)">API-ключ</label>
+                        <input class="finput" value="generated-key-12345" readonly style="opacity:.5;cursor:not-allowed" title="Генерируется бэкендом">
+                        <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);margin-top:4px">⚠ Сейчас захардкожен в бэкенде как «generated-key-12345» для всех серверов</div>
+                    </div>
+                    <button class="btn-primary" onclick="addServer()" id="btn-add-srv" style="width:100%;margin-top:4px">
+                        Создать сервер
+                    </button>
+                    <div id="add-result" style="margin-top:12px;font-family:var(--mono);font-size:11px;display:none"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-hd"><div class="card-title">Что происходит при создании</div></div>
+                    <div style="font-family:var(--mono);font-size:11px;line-height:2;color:var(--txt2)">
+                        <div>→ POST /api/servers</div>
+                        <div>→ Тело: <span style="color:var(--accent)">{ name, ip_address }</span></div>
+                        <div>→ Бэкенд создаёт запись в PostgreSQL</div>
+                        <div>→ Возвращает: <span style="color:var(--accent)">{ server_id, api_key }</span></div>
+                        <div>→ API ключ = «generated-key-12345»</div>
+                    </div>
+                    <div class="sep"></div>
+                    <div class="card-title" style="margin-bottom:8px">Ответ бэкенда</div>
+                    <pre id="add-response" style="font-family:var(--mono);font-size:11px;color:var(--txt3);background:var(--bg3);padding:10px;border-radius:var(--r);white-space:pre-wrap;word-break:break-all;min-height:60px">Ожидание запроса...</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ ОТПРАВИТЬ МЕТРИКИ ══ -->
+        <div class="page" id="page-metrics">
+            <div class="ph"><div><h1>Отправить метрики</h1><div class="ph-sub">POST /api/metrics — имитация агента</div></div></div>
+
+            <div class="g2">
+                <div class="card">
+                    <div class="card-hd"><div class="card-title">Параметры метрики</div></div>
+                    <div class="frow">
+                        <label class="flabel">API-ключ агента</label>
+                        <input class="finput" id="m-apikey" placeholder="generated-key-12345" value="generated-key-12345">
+                    </div>
+                    <div class="fgrid2">
+                        <div class="frow">
+                            <label class="flabel">CPU (%)</label>
+                            <input class="finput" id="m-cpu" type="number" min="0" max="100" value="45" oninput="updateMetricPreview()">
+                        </div>
+                        <div class="frow">
+                            <label class="flabel">RAM (%)</label>
+                            <input class="finput" id="m-ram" type="number" min="0" max="100" value="60" oninput="updateMetricPreview()">
+                        </div>
+                        <div class="frow">
+                            <label class="flabel">Disk (%)</label>
+                            <input class="finput" id="m-disk" type="number" min="0" max="100" value="30" oninput="updateMetricPreview()">
+                        </div>
+                        <div class="frow">
+                            <label class="flabel">Net In (bytes)</label>
+                            <input class="finput" id="m-netin" type="number" value="1048576" oninput="updateMetricPreview()">
+                        </div>
+                        <div class="frow">
+                            <label class="flabel">Net Out (bytes)</label>
+                            <input class="finput" id="m-netout" type="number" value="524288" oninput="updateMetricPreview()">
+                        </div>
+                    </div>
+
+                    <div id="m-warn" class="warn-box" style="display:none">⚠ Значения превышают пороги! Бэкенд сгенерирует CRITICAL алерт и отправит email.</div>
+
+                    <div style="display:flex;gap:8px;margin-top:4px">
+                        <button class="btn-primary" onclick="sendMetrics()" id="btn-send-metrics" style="flex:1">Отправить POST /api/metrics</button>
+                        <button class="btn" onclick="randomMetrics()">Случайные</button>
+                        <button class="btn btn-danger" onclick="criticalMetrics()">Критические</button>
+                    </div>
+                    <div id="m-result" style="margin-top:12px;font-family:var(--mono);font-size:11px;display:none"></div>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:16px">
+                    <div class="card">
+                        <div class="card-hd"><div class="card-title">JSON тело запроса</div></div>
+                        <pre id="m-preview" style="font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--bg3);padding:10px;border-radius:var(--r);white-space:pre-wrap"></pre>
+                    </div>
+                    <div class="card">
+                        <div class="card-hd"><div class="card-title">Ответ бэкенда</div></div>
+                        <pre id="m-response" style="font-family:var(--mono);font-size:11px;color:var(--txt3);background:var(--bg3);padding:10px;border-radius:var(--r);white-space:pre-wrap;min-height:50px">Ожидание запроса...</pre>
+                    </div>
+                    <div class="card">
+                        <div class="card-hd"><div class="card-title">Что происходит на бэкенде</div></div>
+                        <div style="font-family:var(--mono);font-size:11px;line-height:2;color:var(--txt2)">
+                            <div>1. Проверка api_key → server в БД</div>
+                            <div>2. Сохранение SystemMetric в PostgreSQL</div>
+                            <div>3. Alert Worker (каждую мин.) проверит:</div>
+                            <div style="padding-left:16px">CPU > 90% → CRITICAL в Redis</div>
+                            <div style="padding-left:16px">RAM > 85% → CRITICAL в Redis</div>
+                            <div style="padding-left:16px">Disk > 95% → CRITICAL в Redis</div>
+                            <div>4. Email Worker → SMTP → admin email</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+    // ════════════════════════════════════════════════
+    //  STATE
+    // ════════════════════════════════════════════════
+    let BASE = 'http://localhost:8080';
+    let connected = false;
+    let servers = [];          // { id, name, ip, apiKey, status, metrics: [] }
+    let alertLog = [];
+    let incidents = [];
+    let selectedSrv = null;
+    let stats = { critical:0, resolved:0, servers:0, metrics:0 };
+
+    // ════════════════════════════════════════════════
+    //  NAVIGATION
+    // ════════════════════════════════════════════════
+    function goPage(id, el) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById('page-' + id).classList.add('active');
+        if (el) el.classList.add('active');
+    }
+
+    // ════════════════════════════════════════════════
+    //  API
+    // ════════════════════════════════════════════════
+    async function req(path, method='GET', body=null) {
+        BASE = document.getElementById('api-url').value.replace(/\/$/,'');
+        const opts = { method, headers:{'Content-Type':'application/json'} };
+        if (body) opts.body = JSON.stringify(body);
+        const r = await fetch(BASE + path, opts);
+        const text = await r.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch(_) { data = text; }
+        if (!r.ok) throw { status: r.status, data };
+        return data;
+    }
+
+    // ════════════════════════════════════════════════
+    //  HEALTH CHECK → GET /api/health
+    // ════════════════════════════════════════════════
+    async function loadServers() {
+        try {
+            const data = await req('/api/servers');
+
+            servers = data.map(s => ({
+                id: s.id,
+                name: s.name,
+                ip: s.ip_address,
+                apiKey: s.api_key,
+                status: 'Online',
+                metrics: s.metrics || []
+            }));
+
+            stats.servers = servers.length;
+            renderServers();
+
+        } catch(e) {
+            console.error("Не удалось загрузить серверы из БД:", e);
+            toast('Ошибка', 'Не удалось загрузить список серверов из базы', 'red');
+        }
+    }
+
+    async function loadAlerts() {
+        try {
+            const data = await req('/api/alerts');
+
+            alertLog = [];
+            incidents = [];
+            stats.critical = 0;
+            stats.resolved = 0;
+
+            data.forEach(a => {
+                const alertObj = {
+                    type: a.type,
+                    server_name: a.server_ip,
+                    ip_address: a.server_ip,
+                    cpu: a.cpu,
+                    ram: a.ram,
+                    message: a.message,
+                    _ts: new Date(a.created_at)
+                };
+
+                alertLog.push(alertObj);
+
+                if (a.type === 'CRITICAL') {
+                    stats.critical++;
+                    const incId = 'INC-' + String(stats.critical).padStart(4, '0');
+                    incidents.push({ ...alertObj, incId });
+                } else if (a.type === 'RESOLVED') {
+                    stats.resolved++;
+                }
+            });
+
+            renderAlertLog();
+            renderDashFeed();
+            renderIncidents();
+            updateKPIs();
+
+        } catch(e) {
+            console.error("Ошибка загрузки истории алертов:", e);
+        }
+    }
+
+    async function checkHealth() {
+        const dot = document.getElementById('cdot');
+        const lbl = document.getElementById('clabel');
+        dot.className = 'cdot';
+        lbl.textContent = 'подключение...';
+        try {
+            const d = await req('/api/health');
+            connected = true;
+
+            connectWebSocket();
+            loadServers();
+            loadAlerts();
+
+            dot.className = 'cdot ok';
+            lbl.textContent = 'подключено';
+            document.getElementById('kpi-api').textContent = 'online';
+            document.getElementById('kpi-api').style.color = 'var(--green)';
+            document.getElementById('dash-ts').textContent =
+                `API: ${d.status || 'ok'} · DB: ${d.database || '?'} · ${new Date().toLocaleTimeString('ru')}`;
+            toast('Подключено', `${BASE}/api/health → ${d.status}`, 'green');
+        } catch(e) {
+            connected = false;
+            dot.className = 'cdot err';
+            lbl.textContent = 'ошибка';
+            document.getElementById('kpi-api').textContent = 'offline';
+            document.getElementById('kpi-api').style.color = 'var(--red)';
+            toast('Ошибка подключения', e.message || `HTTP ${e.status}`, 'red');
+        }
+    }
+
+    async function refreshDash() {
+        const s = document.getElementById('spin-dash');
+        s.style.display = 'inline-block';
+        await checkHealth();
+        s.style.display = 'none';
+    }
+
+    // ════════════════════════════════════════════════
+    //  ADD SERVER → POST /api/servers
+    // ════════════════════════════════════════════════
+    async function addServer() {
+        const name = document.getElementById('new-name').value.trim();
+        const ip   = document.getElementById('new-ip').value.trim();
+        if (!name || !ip) { toast('Ошибка', 'Заполните название и IP', 'red'); return; }
+
+        const btn = document.getElementById('btn-add-srv');
+        btn.disabled = true; btn.textContent = 'Отправляю...';
+
+        const resultEl = document.getElementById('add-result');
+        const respEl   = document.getElementById('add-response');
+
+        try {
+            const d = await req('/api/servers', 'POST', { name, ip_address: ip });
+
+            respEl.textContent = JSON.stringify(d, null, 2);
+            respEl.style.color = 'var(--green)';
+
+            // Сохраняем локально
+            const srv = {
+                id: d.server_id,
+                name,
+                ip,
+                apiKey: d.api_key || 'generated-key-12345',
+                status: 'Online',
+                metrics: []
+            };
+            servers.push(srv);
+            stats.servers++;
+
+            // Обновляем api-key в форме метрик
+            document.getElementById('m-apikey').value = srv.apiKey;
+
+            resultEl.style.display = 'block';
+            resultEl.style.color = 'var(--green)';
+            resultEl.textContent = `✓ Сервер #${d.server_id} создан. API ключ: ${d.api_key}`;
+
+            document.getElementById('new-name').value = '';
+            document.getElementById('new-ip').value = '';
+
+            renderServers();
+            updateKPIs();
+            toast('Сервер добавлен', `${name} (${ip}) · ID: ${d.server_id}`, 'green');
+        } catch(e) {
+            const msg = e.data?.error || JSON.stringify(e.data) || `HTTP ${e.status}`;
+            respEl.textContent = JSON.stringify(e.data, null, 2);
+            respEl.style.color = 'var(--red)';
+            resultEl.style.display = 'block';
+            resultEl.style.color = 'var(--red)';
+            resultEl.textContent = '✗ ' + msg;
+            toast('Ошибка', msg, 'red');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Создать сервер';
+        }
+    }
+
+    // ════════════════════════════════════════════════
+    //  SEND METRICS → POST /api/metrics
+    // ════════════════════════════════════════════════
+    function updateMetricPreview() {
+        const cpu  = parseFloat(document.getElementById('m-cpu').value)  || 0;
+        const ram  = parseFloat(document.getElementById('m-ram').value)  || 0;
+        const disk = parseFloat(document.getElementById('m-disk').value) || 0;
+        const netin  = parseInt(document.getElementById('m-netin').value)  || 0;
+        const netout = parseInt(document.getElementById('m-netout').value) || 0;
+        const apikey = document.getElementById('m-apikey').value;
+
+        const body = { api_key: apikey, cpu, ram, disk, net_in: netin, net_out: netout };
+        document.getElementById('m-preview').textContent = JSON.stringify(body, null, 2);
+
+        const warn = document.getElementById('m-warn');
+        warn.style.display = (cpu > 90 || ram > 85 || disk > 95) ? 'flex' : 'none';
+    }
+
+    async function sendMetrics() {
+        const apikey = document.getElementById('m-apikey').value.trim();
+        const cpu    = parseFloat(document.getElementById('m-cpu').value)  || 0;
+        const ram    = parseFloat(document.getElementById('m-ram').value)  || 0;
+        const disk   = parseFloat(document.getElementById('m-disk').value) || 0;
+        const netin  = parseInt(document.getElementById('m-netin').value)  || 0;
+        const netout = parseInt(document.getElementById('m-netout').value) || 0;
+
+        if (!apikey) { toast('Ошибка', 'Укажите API-ключ', 'red'); return; }
+
+        const btn = document.getElementById('btn-send-metrics');
+        btn.disabled = true; btn.textContent = 'Отправляю...';
+
+        const body = { api_key: apikey, cpu, ram, disk, net_in: netin, net_out: netout };
+        const respEl = document.getElementById('m-response');
+        const resEl  = document.getElementById('m-result');
+
+        try {
+            const d = await req('/api/metrics', 'POST', body);
+            respEl.textContent = JSON.stringify(d, null, 2);
+            respEl.style.color = 'var(--green)';
+            resEl.style.display = 'block'; resEl.style.color = 'var(--green)';
+            resEl.textContent = '✓ Метрики приняты бэкендом';
+
+            stats.metrics++;
+
+            // Сохраняем метрику локально в нужный сервер
+            const srv = servers.find(s => s.apiKey === apikey);
+            const metric = { cpu, ram, disk, net_in: netin, net_out: netout, ts: new Date() };
+            if (srv) {
+                srv.metrics.push(metric);
+                if (srv.metrics.length > 30) srv.metrics.shift();
+            }
+
+            // Симулируем поведение alerts.go
+            if (cpu > 90 || ram > 85 || disk > 95) {
+                const srvName = srv ? srv.name : `api_key:${apikey.slice(0,10)}`;
+                const srvIp   = srv ? srv.ip : '—';
+                pushAlert({ type:'CRITICAL', server_name: srvName, ip_address: srvIp, cpu, ram, message:'Превышение допустимой нагрузки на ресурсы' });
+            } else {
+                // Проверяем — если раньше был активен — resolved
+                const wasActive = alertLog.find(a => a.type === 'CRITICAL' && a._srv === apikey);
+                if (wasActive) {
+                    const srvName = srv ? srv.name : apikey;
+                    pushAlert({ type:'RESOLVED', server_name: srvName, ip_address: srv?.ip || '—', cpu, ram, message:'Нагрузка вернулась в норму' });
+                }
+            }
+
+            updateKPIs();
+            renderServers();
+            if (selectedSrv && srv && srv.id === selectedSrv) renderDetail(srv);
+            toast('Метрики отправлены', `CPU: ${cpu}% RAM: ${ram}% Disk: ${disk}%`, 'green');
+        } catch(e) {
+            const msg = e.data?.error || `HTTP ${e.status}`;
+            respEl.textContent = JSON.stringify(e.data, null, 2);
+            respEl.style.color = 'var(--red)';
+            resEl.style.display = 'block'; resEl.style.color = 'var(--red)';
+            resEl.textContent = '✗ ' + msg;
+            toast('Ошибка', msg, 'red');
+        } finally {
+            btn.disabled = false; btn.textContent = 'Отправить POST /api/metrics';
+        }
+    }
+
+    function randomMetrics() {
+        document.getElementById('m-cpu').value  = (Math.random() * 80 + 5).toFixed(1);
+        document.getElementById('m-ram').value  = (Math.random() * 75 + 10).toFixed(1);
+        document.getElementById('m-disk').value = (Math.random() * 60 + 5).toFixed(1);
+        document.getElementById('m-netin').value  = Math.floor(Math.random() * 10000000);
+        document.getElementById('m-netout').value = Math.floor(Math.random() * 5000000);
+        updateMetricPreview();
+    }
+
+    function criticalMetrics() {
+        document.getElementById('m-cpu').value  = (91 + Math.random() * 8).toFixed(1);
+        document.getElementById('m-ram').value  = (86 + Math.random() * 13).toFixed(1);
+        document.getElementById('m-disk').value = (96 + Math.random() * 3).toFixed(1);
+        updateMetricPreview();
+    }
+
+    // При открытии страницы метрик — показываем превью
+    document.getElementById('page-metrics').addEventListener('animationstart', updateMetricPreview);
+
+    // ════════════════════════════════════════════════
+    //  ALERTS
+    // ════════════════════════════════════════════════
+    function pushAlert(a) {
+        a._ts  = new Date();
+        a._srv = document.getElementById('m-apikey').value;
+        alertLog.unshift(a);
+        if (alertLog.length > 200) alertLog.pop();
+
+        if (a.type === 'CRITICAL') {
+            stats.critical++;
+            incidents.unshift({ ...a, incId: 'INC-' + String(stats.critical).padStart(4,'0') });
+            toast(`⚠ CRITICAL — ${a.server_name}`, `CPU: ${a.cpu?.toFixed(1)||'—'}% RAM: ${a.ram?.toFixed(1)||'—'}%`, 'red');
+        } else if (a.type === 'RESOLVED') {
+            stats.resolved++;
+            toast(`✓ RESOLVED — ${a.server_name}`, 'Нагрузка вернулась в норму', 'green');
+        }
+
+        renderAlertLog();
+        renderDashFeed();
+        renderIncidents();
+        updateKPIs();
+    }
+
+    function renderAlertLog() {
+        const el = document.getElementById('alert-log');
+        document.getElementById('ac-crit').textContent  = stats.critical;
+        document.getElementById('ac-res').textContent   = stats.resolved;
+        document.getElementById('ac-total').textContent = alertLog.length;
+
+        const nc = document.getElementById('nav-alert-cnt');
+        if (stats.critical > 0) { nc.style.display=''; nc.textContent = stats.critical; }
+        else nc.style.display = 'none';
+
+        if (!alertLog.length) {
+            el.innerHTML = '<div class="empty"><div class="empty-ico">📡</div>Нет алертов</div>';
+            return;
+        }
+        el.innerHTML = alertLog.map(a => {
+            const isCrit = a.type === 'CRITICAL';
+            const ic = isCrit
+                ? 'background:var(--red-bg);color:var(--red)'
+                : 'background:var(--green-bg);color:var(--green)';
+            return `<div class="ali">
+      <div class="ali-icon" style="${ic}">${isCrit ? '!' : '✓'}</div>
+      <div class="ali-body">
+        <div class="ali-title">
+          <span class="badge ${isCrit?'b-red':'b-green'}" style="margin-right:6px">${a.type}</span>
+          ${esc(a.server_name)}
+        </div>
+        <div class="ali-meta">${esc(a.ip_address)} · CPU ${fnum(a.cpu)}% · RAM ${fnum(a.ram)}% · ${esc(a.message||'')}</div>
+      </div>
+      <div class="ali-time">${a._ts.toLocaleTimeString('ru')}</div>
+    </div>`;
+        }).join('');
+    }
+
+    function renderDashFeed() {
+        const el = document.getElementById('dash-alert-feed');
+        const recent = alertLog.slice(0,4);
+        if (!recent.length) return;
+        el.innerHTML = recent.map(a => {
+            const isCrit = a.type === 'CRITICAL';
+            const ic = isCrit ? 'background:var(--red-bg);color:var(--red)' : 'background:var(--green-bg);color:var(--green)';
+            return `<div class="ali">
+      <div class="ali-icon" style="${ic}">${isCrit?'!':'✓'}</div>
+      <div class="ali-body">
+        <div class="ali-title" style="font-size:12px">${esc(a.server_name)} — ${a.type}</div>
+        <div class="ali-meta">CPU ${fnum(a.cpu)}% · RAM ${fnum(a.ram)}%</div>
+      </div>
+      <div class="ali-time">${a._ts.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>
+    </div>`;
+        }).join('');
+    }
+
+    function renderIncidents() {
+        const el = document.getElementById('inc-list');
+        if (!incidents.length) {
+            el.innerHTML = '<div class="empty"><div class="empty-ico">🛡</div>Нет инцидентов</div>';
+            return;
+        }
+        el.innerHTML = incidents.map(i => `
+    <div class="inc" style="border-left-color:var(--red)">
+      <div class="inc-hd">
+        <div class="inc-title">${esc(i.incId)} · CRITICAL — ${esc(i.server_name)}</div>
+        <span class="badge b-red"><span class="bdot"></span>Critical</span>
+      </div>
+      <div class="inc-body">
+        IP: ${esc(i.ip_address)} · CPU: ${fnum(i.cpu)}% · RAM: ${fnum(i.ram)}%<br>
+        ${esc(i.message)} · ${i._ts.toLocaleTimeString('ru')}
+      </div>
+    </div>
+  `).join('');
+    }
+
+    function clearAlerts() {
+        alertLog=[]; incidents=[]; stats.critical=0; stats.resolved=0;
+        renderAlertLog(); renderIncidents(); renderDashFeed(); updateKPIs();
+    }
+
+    // ════════════════════════════════════════════════
+    //  SERVERS RENDER
+    // ════════════════════════════════════════════════
+    function renderServers() {
+        renderDashSrvList();
+        renderSrvTable();
+        updateKPIs();
+    }
+
+    function renderDashSrvList() {
+        const el = document.getElementById('dash-srv-list');
+        if (!servers.length) {
+            el.innerHTML = '<div class="empty"><div class="empty-ico">⬡</div>Серверов нет — добавьте первый</div>';
+            return;
+        }
+        el.innerHTML = servers.map(s => {
+            const last = s.metrics[s.metrics.length-1];
+            const cpu  = last?.cpu ?? null;
+            const ram  = last?.ram ?? null;
+            const cpuc = cpu >= 90 ? 'var(--red)' : cpu >= 75 ? 'var(--amber)' : 'var(--green)';
+            const ramc = ram >= 85 ? 'var(--red)' : ram >= 70 ? 'var(--amber)' : 'var(--green)';
+            return `<div class="srv" onclick="selectServer(${servers.indexOf(s)})" style="cursor:pointer">
+      <div class="sdot" style="background:var(--green)"></div>
+      <div class="srv-info">
+        <div class="srv-name">${esc(s.name)}</div>
+        <div class="srv-meta">${esc(s.ip)} · ID: ${s.id||'—'}</div>
+      </div>
+      <div class="srv-bars">
+        ${cpu!==null?`<div class="pbar"><span class="pbar-lbl">CPU</span><div class="pbar-bg"><div class="pbar-fill" style="width:${cpu}%;background:${cpuc}"></div></div><span class="pbar-val">${cpu.toFixed(0)}%</span></div>`:''}
+        ${ram!==null?`<div class="pbar"><span class="pbar-lbl">RAM</span><div class="pbar-bg"><div class="pbar-fill" style="width:${ram}%;background:${ramc}"></div></div><span class="pbar-val">${ram.toFixed(0)}%</span></div>`:''}
+      </div>
+    </div>`;
+        }).join('');
+    }
+
+    function renderSrvTable() {
+        const el = document.getElementById('srv-table-wrap');
+        if (!servers.length) {
+            el.innerHTML = '<div class="empty"><div class="empty-ico">⬡</div>Серверов нет</div>';
+            return;
+        }
+        el.innerHTML = `<table class="tbl">
+    <thead><tr><th>ID</th><th>Название</th><th>IP-адрес</th><th>API-ключ</th><th>Метрик</th><th></th></tr></thead>
+    <tbody>${servers.map((s,i) => `<tr onclick="selectServer(${i})" style="cursor:pointer">
+      <td>#${s.id||'—'}</td>
+      <td>${esc(s.name)}</td>
+      <td style="color:var(--accent)">${esc(s.ip)}</td>
+      <td style="color:var(--txt3)">${s.apiKey}</td>
+      <td>${s.total_metrics_count || s.metrics.length}</td>
+      <td><button class="btn" onclick="event.stopPropagation();selectServer(${i})">Детали</button></td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+    }
+
+    function selectServer(idx) {
+        const srv = servers[idx];
+        if (!srv) return;
+        selectedSrv = srv.id;
+        goPage('servers', document.getElementById('nav-servers'));
+        document.getElementById('srv-detail').style.display = 'block';
+        renderDetail(srv);
+        // Подставляем api key в форму метрик
+        document.getElementById('m-apikey').value = srv.apiKey;
+    }
+
+    function renderDetail(srv) {
+        document.getElementById('det-name').textContent = `${srv.name} — ${srv.ip}`;
+        document.getElementById('det-id').textContent   = srv.id || '—';
+        document.getElementById('det-ip').textContent   = srv.ip;
+        document.getElementById('det-key').textContent  = srv.apiKey;
+        document.getElementById('det-status').innerHTML = '<span class="badge b-green"><span class="bdot"></span>Online</span>';
+        document.getElementById('det-metrics-cnt').textContent = srv.metrics.length;
+
+        const last = srv.metrics[srv.metrics.length-1];
+        if (last) {
+            const cpuc = last.cpu >= 90 ? 'var(--red)' : last.cpu >= 75 ? 'var(--amber)' : 'var(--green)';
+            const ramc = last.ram >= 85 ? 'var(--red)' : last.ram >= 70 ? 'var(--amber)' : 'var(--green)';
+            document.getElementById('det-cpu').textContent  = last.cpu.toFixed(1) + '%';
+            document.getElementById('det-cpu').style.color  = cpuc;
+            document.getElementById('det-ram').textContent  = last.ram.toFixed(1) + '%';
+            document.getElementById('det-ram').style.color  = ramc;
+            document.getElementById('det-disk').textContent = last.disk.toFixed(1) + '%';
+            document.getElementById('det-netin').textContent = fBytes(last.net_in) + '/s';
+        }
+
+        renderDetailChart(srv.metrics);
+    }
+
+    function renderDetailChart(metrics) {
+        const el = document.getElementById('det-chart');
+        if (!metrics.length) {
+            el.innerHTML = '<div style="color:var(--txt3);font-family:var(--mono);font-size:11px;margin:auto">Нет данных</div>';
+            return;
+        }
+        el.innerHTML = metrics.slice(-20).map(m => {
+            const h   = Math.max(m.cpu || 0, 2);
+            const col = m.cpu >= 90 ? 'var(--red)' : m.cpu >= 75 ? 'var(--amber)' : 'var(--accent)';
+            return `<div class="chart-col">
+      <div class="chart-bar" style="height:${h}%;background:${col};opacity:.8"></div>
+      <div class="chart-lbl">${(m.cpu||0).toFixed(0)}</div>
+    </div>`;
+        }).join('');
+    }
+
+    async function sendTestMetric() {
+        const srv = servers.find(s => s.id === selectedSrv);
+        if (!srv) return;
+        document.getElementById('m-apikey').value = srv.apiKey;
+        document.getElementById('m-cpu').value  = (Math.random() * 70 + 10).toFixed(1);
+        document.getElementById('m-ram').value  = (Math.random() * 60 + 15).toFixed(1);
+        document.getElementById('m-disk').value = (Math.random() * 50 + 5).toFixed(1);
+        updateMetricPreview();
+        await sendMetrics();
+    }
+
+    // ════════════════════════════════════════════════
+    //  KPI UPDATE
+    // ════════════════════════════════════════════════
+    function updateKPIs() {
+        document.getElementById('kpi-critical').textContent = stats.critical;
+        document.getElementById('kpi-servers').textContent  = servers.length;
+        document.getElementById('kpi-metrics').textContent  = stats.metrics;
+    }
+
+    // ════════════════════════════════════════════════
+    //  TOAST
+    // ════════════════════════════════════════════════
+    function toast(title, body, type='green') {
+        const c = document.getElementById('toasts');
+        const el = document.createElement('div');
+        el.className = `toast ${type}`;
+        el.innerHTML = `<div><div class="t-title">${esc(title)}</div><div class="t-body">${esc(body)}</div></div>`;
+        c.appendChild(el);
+        setTimeout(() => { el.style.opacity='0'; el.style.transition='.3s'; setTimeout(()=>el.remove(),300); }, 3500);
+    }
+
+    // ════════════════════════════════════════════════
+    //  UTILS
+    // ════════════════════════════════════════════════
+    function esc(s) {
+        return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function fnum(n) { return n != null ? parseFloat(n).toFixed(1) : '—'; }
+    function fBytes(b) {
+        b = b || 0;
+        if (b < 1024) return b + ' B';
+        if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+        return (b/1048576).toFixed(1) + ' MB';
+    }
+
+    // ════════════════════════════════════════════════
+    //  WEBSOCKET (REAL-TIME ALERTS)
+    // ════════════════════════════════════════════════
+    let ws;
+
+    function connectWebSocket() {
+        const wsUrl = BASE.replace(/^http/, 'ws') + '/ws';
+
+        if (ws) ws.close();
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            console.log("🟢 WebSocket успешно подключен к Go-бэкенду!");
+        };
 
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            if (data.type === "CRITICAL") {
-                alertBox.style.display = "block";
-                alertBox.innerHTML = `🔥 <b>АЛЕРТ!</b> Сервер ${data.server_name} перегружен! CPU: ${data.cpu}%`;
-            } else if (data.type === "RESOLVED") {
-                alertBox.style.display = "none";
+
+            if (data.type === 'metric' || (data.cpu !== undefined && data.ram !== undefined)) {
+                const srv = servers.find(s => s.id === data.id || s.ip === (data.ip || data.server_id));
+
+                if (srv) {
+                    if (typeof stats !== 'undefined') {
+                        stats.metrics = (stats.metrics || 0) + 1;
+                        if (typeof updateKPIs === 'function') updateKPIs();
+                    }
+
+                    srv.total_metrics_count = (srv.total_metrics_count || srv.metrics.length) + 1;
+
+                    srv.metrics.push({
+                        cpu: data.cpu,
+                        ram: data.ram,
+                        disk: data.disk || 0,
+                        net_in: data.net_in || 0,
+                        net_out: data.net_out || 0,
+                        ts: new Date()
+                    });
+
+                    if (srv.metrics.length > 30) srv.metrics.shift();
+
+                    renderServers();
+
+                    if (selectedSrv === srv.id) {
+                        renderDetail(srv);
+                    }
+                }
+            }
+
+            if (data.severity) {
+                const alertObj = {
+                    type: data.severity === 'critical' ? 'CRITICAL' : 'RESOLVED',
+                    server_name: data.ip || data.server_id,
+                    ip_address: data.ip || data.server_id,
+                    cpu: data.cpu || 0,
+                    ram: data.ram || 0,
+                    message: data.message || 'Сработал триггер на бэкенде!'
+                };
+                pushAlert(alertObj);
             }
         };
-    </script>
+
+        ws.onclose = () => {
+            console.log("🔴 WebSocket отключен. Реконнект через 3 сек...");
+            setTimeout(connectWebSocket, 3000);
+        };
+
+        ws.onerror = (err) => {
+            console.error("❌ Ошибка WebSocket:", err);
+        };
+    }
+
+    // ════════════════════════════════════════════════
+    //  INIT
+    // ════════════════════════════════════════════════
+    updateMetricPreview();
+</script>
 </body>
 </html>

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -13,6 +14,7 @@ type AlertState struct {
 }
 
 var activeAlerts = make(map[uint]AlertState)
+var activeMLAlerts = make(map[uint]AlertState)
 
 const (
 	ThresholdCPU  = 90.0
@@ -48,14 +50,14 @@ func checkMetricsForAlerts() {
 	}
 
 	for _, server := range servers {
-		cpuQuery := `dgop_cpu_usage_percent{server="alexusdot-asustufgaminga15fa506ncrfa506ncr"}`
+		cpuQuery := fmt.Sprintf(`dgop_cpu_usage_percent{instance=~"%s(:.*)?"}`, server.IPAddress)
 		cpuUsage, err := QueryPrometheus(promURL, cpuQuery)
 		if err != nil {
 			log.Printf("[DEBUG] Пропуск сервера %s. Ошибка Prometheus: %v\n", server.IPAddress, err)
 			continue
 		}
 
-		ramQuery := `dgop_memory_used_percent{server="alexusdot-asustufgaminga15fa506ncrfa506ncr"}`
+		ramQuery := fmt.Sprintf(`dgop_memory_used_percent{instance=~"%s(:.*)?"}`, server.IPAddress)
 		ramUsage, err := QueryPrometheus(promURL, ramQuery)
 		if err != nil {
 			log.Printf("[DEBUG] Ошибка получения RAM для %s: %v\n", server.IPAddress, err)
@@ -65,8 +67,94 @@ func checkMetricsForAlerts() {
 		log.Printf("[DEBUG] Успех! Сервер %s -> CPU: %.2f%%, RAM: %.2f%%\n", server.IPAddress, cpuUsage, ramUsage)
 
 		currentMetric := SystemMetric{
-			CPU: cpuUsage,
-			RAM: ramUsage,
+			ServerID: server.ID,
+			CPU:      cpuUsage,
+			RAM:      ramUsage,
+		}
+
+		if err := DB.Create(&currentMetric).Error; err != nil {
+			log.Printf("[ERROR] Не удалось сохранить метрику в БД для %s: %v\n", server.IPAddress, err)
+		}
+
+		realtimeData := map[string]interface{}{
+			"type": "metric",
+			"id":   server.ID,
+			"ip":   server.IPAddress,
+			"cpu":  currentMetric.CPU,
+			"ram":  currentMetric.RAM,
+		}
+
+		metricBytes, _ := json.Marshal(realtimeData)
+		BroadcastAlert(metricBytes)
+
+		mlURL := os.Getenv("ML_API_URL")
+		if mlURL != "" {
+			payload := MLPayload{
+				CPU:  currentMetric.CPU,
+				RAM:  currentMetric.RAM,
+				Disk: 0.0, Temperature: 0.0, CoreDiff: 0.0, PPS: 0.0, BPS: 0.0,
+			}
+
+			isAnomaly, score, err := checkMLAnomaly(mlURL, payload)
+			alreadyActive := activeMLAlerts[server.ID].IsActive
+
+			if err == nil && isAnomaly {
+				log.Printf("[DEBUG ML STATE] ServerID: %d, IP: %s, isAnomaly: %v, alreadyActive: %v", server.ID, server.IPAddress, isAnomaly, alreadyActive)
+				if !alreadyActive {
+					log.Printf("🤖 [ML АНОМАЛИЯ] Сервер %s ведет себя подозрительно! Score: %.2f", server.IPAddress, score)
+
+					alertData := map[string]interface{}{
+						"server_id": server.IPAddress,
+						"cpu":       currentMetric.CPU,
+						"ram":       currentMetric.RAM,
+						"severity":  "critical",
+						"message":   "ML-модель зафиксировала аномалию!",
+					}
+					jsonBytes, _ := json.Marshal(alertData)
+					BroadcastAlert(jsonBytes)
+
+					newAlert := AlertLog{
+						ServerID: server.ID,
+						ServerIP: server.IPAddress,
+						Type:     "CRITICAL",
+						CPU:      currentMetric.CPU,
+						RAM:      currentMetric.RAM,
+						Message:  "ML-модель зафиксировала аномалию!",
+					}
+					DB.Create(&newAlert)
+
+					activeMLAlerts[server.ID] = AlertState{IsActive: true, TriggeredAt: time.Now()}
+				}
+
+			} else if err == nil && !isAnomaly {
+				if alreadyActive {
+					log.Printf("✅ [ML RESOLVED] Сервер %s вернулся в норму.", server.IPAddress)
+
+					alertData := map[string]interface{}{
+						"server_id": server.IPAddress,
+						"cpu":       currentMetric.CPU,
+						"ram":       currentMetric.RAM,
+						"severity":  "resolved",
+						"message":   "Поведение сервера стабилизировалось",
+					}
+					jsonBytes, _ := json.Marshal(alertData)
+					BroadcastAlert(jsonBytes)
+
+					resolvedAlert := AlertLog{
+						ServerID: server.ID,
+						ServerIP: server.IPAddress,
+						Type:     "RESOLVED",
+						CPU:      currentMetric.CPU,
+						RAM:      currentMetric.RAM,
+						Message:  "Поведение сервера стабилизировалось",
+					}
+					DB.Create(&resolvedAlert)
+
+					activeMLAlerts[server.ID] = AlertState{IsActive: false}
+				}
+			} else if err != nil {
+				log.Printf("[DEBUG] ML сервис недоступен: %v", err)
+			}
 		}
 
 		state := activeAlerts[server.ID]

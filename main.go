@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"log"
 	"net/http"
 	"os"
@@ -10,15 +12,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type IncomingMetrics struct {
-	APIKey string  `json:"api_key" binding:"required"`
-	CPU    float64 `json:"cpu" binding:"required"`
-	RAM    float64 `json:"ram" binding:"required"`
-	Disk   float64 `json:"disk" binding:"required"`
-	NetIn  uint64  `json:"net_in"`
-	NetOut uint64  `json:"net_out"`
-}
-
 type CreateServerRequest struct {
 	Name      string `json:"name" binding:"required"`
 	IPAddress string `json:"ip_address" binding:"required"`
@@ -26,7 +19,7 @@ type CreateServerRequest struct {
 
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Println("Файл .env не найден, используем системные переменные окружения")
+		log.Println("Файл ..env не найден, используем системные переменные окружения")
 	}
 
 	dsn := os.Getenv("DB_DSN")
@@ -37,10 +30,12 @@ func main() {
 	InitDB(dsn)
 	InitRedis()
 
-	StartAlertWorker(5 * time.Second)
+	StartAlertWorker(10 * time.Second)
 	StartEmailWorker()
 
 	router := gin.Default()
+
+	router.GET("/ws", handleConnections)
 
 	router.Static("/static", "./public")
 
@@ -52,9 +47,15 @@ func main() {
 	{
 		api.GET("/health", healthCheck)
 		api.POST("/servers", createServer)
+		api.GET("/servers", getServers)
+		api.POST("/metrics", receiveMetrics)
+		api.GET("/alerts", getAlerts)
 	}
 
-	router.Run(":8080")
+	err := router.Run(":8080")
+	if err != nil {
+		return
+	}
 }
 
 func healthCheck(c *gin.Context) {
@@ -69,10 +70,16 @@ func createServer(c *gin.Context) {
 		return
 	}
 
+	apiKey, err := generateAPIKey(16)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка генерации API-ключа"})
+		return
+	}
+
 	newServer := Server{
 		Name:      req.Name,
 		IPAddress: req.IPAddress,
-		APIKey:    "generated-key-12345",
+		APIKey:    apiKey,
 	}
 
 	result := DB.Create(&newServer)
@@ -86,4 +93,35 @@ func createServer(c *gin.Context) {
 		"server_id": newServer.ID,
 		"api_key":   newServer.APIKey,
 	})
+}
+
+func getServers(c *gin.Context) {
+	var servers []Server
+
+	if err := DB.Preload("Metrics").Find(&servers).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить список серверов: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, servers)
+}
+
+func getAlerts(c *gin.Context) {
+	var alerts []AlertLog
+	yesterday := time.Now().Add(-24 * time.Hour)
+
+	if err := DB.Where("created_at > ?", yesterday).Order("created_at desc").Find(&alerts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка БД"})
+		return
+	}
+	c.JSON(http.StatusOK, alerts)
+}
+
+// Вспомогательная функция для генерации случайных токенов
+func generateAPIKey(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }
