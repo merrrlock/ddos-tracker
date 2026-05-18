@@ -255,7 +255,7 @@ def train_model(days=14, contamination=None, dry_run=False):
             len(df), MIN_TRAINING_SAMPLES
         )
         logger.warning(
-            "Соберите больше метрик или уменьшите MIN_TRAINING_SAMPLES в .env"
+            "Соберите больше метрик или уменьшите MIN_TRAINING_SAMPLES в ..env"
         )
         return False
 

@@ -69,6 +69,36 @@ func checkMetricsForAlerts() {
 			RAM: ramUsage,
 		}
 
+		mlURL := os.Getenv("ML_API_URL")
+		if mlURL != "" {
+			payload := MLPayload{
+				CPU:  currentMetric.CPU,
+				RAM:  currentMetric.RAM,
+				Disk: 0.0, Temperature: 0.0, CoreDiff: 0.0, PPS: 0.0, BPS: 0.0,
+			}
+
+			isAnomaly, score, err := checkMLAnomaly(mlURL, payload)
+
+			if err == nil && isAnomaly {
+				log.Printf("🤖 [ML АНОМАЛИЯ] Сервер %s ведет себя подозрительно! Score: %.2f", server.IPAddress, score)
+
+				alertData := map[string]interface{}{
+					"server_id": server.IPAddress,
+					"cpu":       currentMetric.CPU,
+					"ram":       currentMetric.RAM,
+					"severity":  "critical",
+					"message":   "ML-модель зафиксировала аномалию!",
+				}
+
+				jsonBytes, _ := json.Marshal(alertData)
+
+				BroadcastAlert(jsonBytes)
+
+			} else if err != nil {
+				log.Printf("[DEBUG] ML сервис недоступен: %v", err)
+			}
+		}
+
 		state := activeAlerts[server.ID]
 
 		if currentMetric.CPU > ThresholdCPU || currentMetric.RAM > ThresholdRAM {

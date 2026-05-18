@@ -19,12 +19,10 @@ type User struct {
 }
 
 type Server struct {
-	ID        uint   `gorm:"primaryKey"`
-	Name      string `gorm:"not null"`
-	IPAddress string `gorm:"not null"`
-	APIKey    string `gorm:"unique;not null"`
-	Status    string `gorm:"default:'Online'"`
-	OwnerID   uint
+	ID        uint   `gorm:"primaryKey" json:"id"`
+	Name      string `json:"name"`
+	IPAddress string `json:"ip_address"`
+	APIKey    string `json:"api_key"`
 }
 
 type SystemMetric struct {
@@ -56,7 +54,7 @@ func InitDB(dsn string) {
 
 	DB.Exec("CREATE EXTENSION IF NOT EXISTS timescaledb;")
 	err = DB.Exec("SELECT create_hypertable('system_metrics', by_range('created_at'), if_not_exists => TRUE);").Error
-	
+
 	if err != nil {
 		log.Println("Заметка TimescaleDB:", err)
 	} else {
