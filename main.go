@@ -49,6 +49,7 @@ func main() {
 		api.POST("/servers", createServer)
 		api.GET("/servers", getServers)
 		api.POST("/metrics", receiveMetrics)
+		api.GET("/alerts", getAlerts)
 	}
 
 	err := router.Run(":8080")
@@ -97,12 +98,23 @@ func createServer(c *gin.Context) {
 func getServers(c *gin.Context) {
 	var servers []Server
 
-	if err := DB.Find(&servers).Error; err != nil {
+	if err := DB.Preload("Metrics").Find(&servers).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить список серверов: " + err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, servers)
+}
+
+func getAlerts(c *gin.Context) {
+	var alerts []AlertLog
+	yesterday := time.Now().Add(-24 * time.Hour)
+
+	if err := DB.Where("created_at > ?", yesterday).Order("created_at desc").Find(&alerts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка БД"})
+		return
+	}
+	c.JSON(http.StatusOK, alerts)
 }
 
 // Вспомогательная функция для генерации случайных токенов

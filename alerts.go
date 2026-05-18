@@ -14,6 +14,7 @@ type AlertState struct {
 }
 
 var activeAlerts = make(map[uint]AlertState)
+var activeMLAlerts = make(map[uint]AlertState)
 
 const (
 	ThresholdCPU  = 90.0
@@ -66,9 +67,25 @@ func checkMetricsForAlerts() {
 		log.Printf("[DEBUG] Успех! Сервер %s -> CPU: %.2f%%, RAM: %.2f%%\n", server.IPAddress, cpuUsage, ramUsage)
 
 		currentMetric := SystemMetric{
-			CPU: cpuUsage,
-			RAM: ramUsage,
+			ServerID: server.ID,
+			CPU:      cpuUsage,
+			RAM:      ramUsage,
 		}
+
+		if err := DB.Create(&currentMetric).Error; err != nil {
+			log.Printf("[ERROR] Не удалось сохранить метрику в БД для %s: %v\n", server.IPAddress, err)
+		}
+
+		realtimeData := map[string]interface{}{
+			"type": "metric",
+			"id":   server.ID,
+			"ip":   server.IPAddress,
+			"cpu":  currentMetric.CPU,
+			"ram":  currentMetric.RAM,
+		}
+
+		metricBytes, _ := json.Marshal(realtimeData)
+		BroadcastAlert(metricBytes)
 
 		mlURL := os.Getenv("ML_API_URL")
 		if mlURL != "" {
@@ -79,22 +96,62 @@ func checkMetricsForAlerts() {
 			}
 
 			isAnomaly, score, err := checkMLAnomaly(mlURL, payload)
+			alreadyActive := activeMLAlerts[server.ID].IsActive
 
 			if err == nil && isAnomaly {
-				log.Printf("🤖 [ML АНОМАЛИЯ] Сервер %s ведет себя подозрительно! Score: %.2f", server.IPAddress, score)
+				log.Printf("[DEBUG ML STATE] ServerID: %d, IP: %s, isAnomaly: %v, alreadyActive: %v", server.ID, server.IPAddress, isAnomaly, alreadyActive)
+				if !alreadyActive {
+					log.Printf("🤖 [ML АНОМАЛИЯ] Сервер %s ведет себя подозрительно! Score: %.2f", server.IPAddress, score)
 
-				alertData := map[string]interface{}{
-					"server_id": server.IPAddress,
-					"cpu":       currentMetric.CPU,
-					"ram":       currentMetric.RAM,
-					"severity":  "critical",
-					"message":   "ML-модель зафиксировала аномалию!",
+					alertData := map[string]interface{}{
+						"server_id": server.IPAddress,
+						"cpu":       currentMetric.CPU,
+						"ram":       currentMetric.RAM,
+						"severity":  "critical",
+						"message":   "ML-модель зафиксировала аномалию!",
+					}
+					jsonBytes, _ := json.Marshal(alertData)
+					BroadcastAlert(jsonBytes)
+
+					newAlert := AlertLog{
+						ServerID: server.ID,
+						ServerIP: server.IPAddress,
+						Type:     "CRITICAL",
+						CPU:      currentMetric.CPU,
+						RAM:      currentMetric.RAM,
+						Message:  "ML-модель зафиксировала аномалию!",
+					}
+					DB.Create(&newAlert)
+
+					activeMLAlerts[server.ID] = AlertState{IsActive: true, TriggeredAt: time.Now()}
 				}
 
-				jsonBytes, _ := json.Marshal(alertData)
+			} else if err == nil && !isAnomaly {
+				if alreadyActive {
+					log.Printf("✅ [ML RESOLVED] Сервер %s вернулся в норму.", server.IPAddress)
 
-				BroadcastAlert(jsonBytes)
+					alertData := map[string]interface{}{
+						"server_id": server.IPAddress,
+						"cpu":       currentMetric.CPU,
+						"ram":       currentMetric.RAM,
+						"severity":  "resolved",
+						"message":   "Поведение сервера стабилизировалось",
+					}
+					jsonBytes, _ := json.Marshal(alertData)
+					BroadcastAlert(jsonBytes)
 
+					resolvedAlert := AlertLog{
+						ServerID: server.ID,
+						ServerIP: server.IPAddress,
+						Type:     "RESOLVED",
+						CPU:      currentMetric.CPU,
+						RAM:      currentMetric.RAM,
+						Message:  "Поведение сервера стабилизировалось",
+					}
+					DB.Create(&resolvedAlert)
+
+					activeMLAlerts[server.ID] = AlertState{IsActive: false}
+				}
 			} else if err != nil {
 				log.Printf("[DEBUG] ML сервис недоступен: %v", err)
 			}

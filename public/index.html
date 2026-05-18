@@ -621,7 +621,7 @@
                 ip: s.ip_address,
                 apiKey: s.api_key,
                 status: 'Online',
-                metrics: []
+                metrics: s.metrics || []
             }));
 
             stats.servers = servers.length;
@@ -632,6 +632,48 @@
             toast('Ошибка', 'Не удалось загрузить список серверов из базы', 'red');
         }
     }
+
+    async function loadAlerts() {
+        try {
+            const data = await req('/api/alerts');
+
+            alertLog = [];
+            incidents = [];
+            stats.critical = 0;
+            stats.resolved = 0;
+
+            data.forEach(a => {
+                const alertObj = {
+                    type: a.type,
+                    server_name: a.server_ip,
+                    ip_address: a.server_ip,
+                    cpu: a.cpu,
+                    ram: a.ram,
+                    message: a.message,
+                    _ts: new Date(a.created_at)
+                };
+
+                alertLog.push(alertObj);
+
+                if (a.type === 'CRITICAL') {
+                    stats.critical++;
+                    const incId = 'INC-' + String(stats.critical).padStart(4, '0');
+                    incidents.push({ ...alertObj, incId });
+                } else if (a.type === 'RESOLVED') {
+                    stats.resolved++;
+                }
+            });
+
+            renderAlertLog();
+            renderDashFeed();
+            renderIncidents();
+            updateKPIs();
+
+        } catch(e) {
+            console.error("Ошибка загрузки истории алертов:", e);
+        }
+    }
+
     async function checkHealth() {
         const dot = document.getElementById('cdot');
         const lbl = document.getElementById('clabel');
@@ -640,8 +682,11 @@
         try {
             const d = await req('/api/health');
             connected = true;
+
             connectWebSocket();
             loadServers();
+            loadAlerts();
+
             dot.className = 'cdot ok';
             lbl.textContent = 'подключено';
             document.getElementById('kpi-api').textContent = 'online';
@@ -974,7 +1019,7 @@
       <td>${esc(s.name)}</td>
       <td style="color:var(--accent)">${esc(s.ip)}</td>
       <td style="color:var(--txt3)">${s.apiKey}</td>
-      <td>${s.metrics.length}</td>
+      <td>${s.total_metrics_count || s.metrics.length}</td>
       <td><button class="btn" onclick="event.stopPropagation();selectServer(${i})">Детали</button></td>
     </tr>`).join('')}</tbody>
   </table>`;
@@ -1094,16 +1139,47 @@
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
 
-            const alertObj = {
-                type: data.severity === 'critical' ? 'CRITICAL' : 'RESOLVED',
-                server_name: data.server_id,
-                ip_address: data.server_id,
-                cpu: data.cpu || 0,
-                ram: data.ram || 0,
-                message: data.message || 'Сработал триггер на бэкенде!'
-            };
+            if (data.type === 'metric' || (data.cpu !== undefined && data.ram !== undefined)) {
+                const srv = servers.find(s => s.id === data.id || s.ip === (data.ip || data.server_id));
 
-            pushAlert(alertObj);
+                if (srv) {
+                    if (typeof stats !== 'undefined') {
+                        stats.metrics = (stats.metrics || 0) + 1;
+                        if (typeof updateKPIs === 'function') updateKPIs();
+                    }
+
+                    srv.total_metrics_count = (srv.total_metrics_count || srv.metrics.length) + 1;
+
+                    srv.metrics.push({
+                        cpu: data.cpu,
+                        ram: data.ram,
+                        disk: data.disk || 0,
+                        net_in: data.net_in || 0,
+                        net_out: data.net_out || 0,
+                        ts: new Date()
+                    });
+
+                    if (srv.metrics.length > 30) srv.metrics.shift();
+
+                    renderServers();
+
+                    if (selectedSrv === srv.id) {
+                        renderDetail(srv);
+                    }
+                }
+            }
+
+            if (data.severity) {
+                const alertObj = {
+                    type: data.severity === 'critical' ? 'CRITICAL' : 'RESOLVED',
+                    server_name: data.ip || data.server_id,
+                    ip_address: data.ip || data.server_id,
+                    cpu: data.cpu || 0,
+                    ram: data.ram || 0,
+                    message: data.message || 'Сработал триггер на бэкенде!'
+                };
+                pushAlert(alertObj);
+            }
         };
 
         ws.onclose = () => {
