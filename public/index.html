@@ -611,6 +611,27 @@
     // ════════════════════════════════════════════════
     //  HEALTH CHECK → GET /api/health
     // ════════════════════════════════════════════════
+    async function loadServers() {
+        try {
+            const data = await req('/api/servers');
+
+            servers = data.map(s => ({
+                id: s.id,
+                name: s.name,
+                ip: s.ip_address,
+                apiKey: s.api_key,
+                status: 'Online',
+                metrics: []
+            }));
+
+            stats.servers = servers.length;
+            renderServers();
+
+        } catch(e) {
+            console.error("Не удалось загрузить серверы из БД:", e);
+            toast('Ошибка', 'Не удалось загрузить список серверов из базы', 'red');
+        }
+    }
     async function checkHealth() {
         const dot = document.getElementById('cdot');
         const lbl = document.getElementById('clabel');
@@ -619,6 +640,8 @@
         try {
             const d = await req('/api/health');
             connected = true;
+            connectWebSocket();
+            loadServers();
             dot.className = 'cdot ok';
             lbl.textContent = 'подключено';
             document.getElementById('kpi-api').textContent = 'online';
@@ -1051,6 +1074,46 @@
         if (b < 1024) return b + ' B';
         if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
         return (b/1048576).toFixed(1) + ' MB';
+    }
+
+    // ════════════════════════════════════════════════
+    //  WEBSOCKET (REAL-TIME ALERTS)
+    // ════════════════════════════════════════════════
+    let ws;
+
+    function connectWebSocket() {
+        const wsUrl = BASE.replace(/^http/, 'ws') + '/ws';
+
+        if (ws) ws.close();
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            console.log("🟢 WebSocket успешно подключен к Go-бэкенду!");
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            const alertObj = {
+                type: data.severity === 'critical' ? 'CRITICAL' : 'RESOLVED',
+                server_name: data.server_id,
+                ip_address: data.server_id,
+                cpu: data.cpu || 0,
+                ram: data.ram || 0,
+                message: data.message || 'Сработал триггер на бэкенде!'
+            };
+
+            pushAlert(alertObj);
+        };
+
+        ws.onclose = () => {
+            console.log("🔴 WebSocket отключен. Реконнект через 3 сек...");
+            setTimeout(connectWebSocket, 3000);
+        };
+
+        ws.onerror = (err) => {
+            console.error("❌ Ошибка WebSocket:", err);
+        };
     }
 
     // ════════════════════════════════════════════════

@@ -22,14 +22,12 @@ func receiveMetrics(c *gin.Context) {
 		return
 	}
 
-	// 1. Ищем сервер по API-ключу
 	var server Server
 	if err := DB.Where("api_key = ?", payload.APIKey).First(&server).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный API-ключ"})
 		return
 	}
 
-	// 2. Создаем и сохраняем метрику (убедись, что структура SystemMetric у тебя выглядит похоже)
 	metric := SystemMetric{
 		ServerID: server.ID,
 		CPU:      payload.CPU,

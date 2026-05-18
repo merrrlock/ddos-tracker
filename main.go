@@ -47,6 +47,7 @@ func main() {
 	{
 		api.GET("/health", healthCheck)
 		api.POST("/servers", createServer)
+		api.GET("/servers", getServers)
 		api.POST("/metrics", receiveMetrics)
 	}
 
@@ -91,6 +92,17 @@ func createServer(c *gin.Context) {
 		"server_id": newServer.ID,
 		"api_key":   newServer.APIKey,
 	})
+}
+
+func getServers(c *gin.Context) {
+	var servers []Server
+
+	if err := DB.Find(&servers).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить список серверов: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, servers)
 }
 
 // Вспомогательная функция для генерации случайных токенов

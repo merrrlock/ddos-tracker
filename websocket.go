@@ -31,14 +31,14 @@ func handleConnections(c *gin.Context) {
 	activeClients[ws] = true
 	clientsMutex.Unlock()
 
-	log.Println("📱 Новый мобильный клиент успешно подключен!")
+	log.Println("Новый клиент успешно подключен!")
 
 	defer func() {
 		clientsMutex.Lock()
 		delete(activeClients, ws)
 		clientsMutex.Unlock()
 		ws.Close()
-		log.Println("📱 Клиент отключился")
+		log.Println("Клиент отключился")
 	}()
 
 	for {

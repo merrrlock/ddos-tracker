@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -48,14 +49,14 @@ func checkMetricsForAlerts() {
 	}
 
 	for _, server := range servers {
-		cpuQuery := `dgop_cpu_usage_percent{server="alexusdot-asustufgaminga15fa506ncrfa506ncr"}`
+		cpuQuery := fmt.Sprintf(`dgop_cpu_usage_percent{instance=~"%s(:.*)?"}`, server.IPAddress)
 		cpuUsage, err := QueryPrometheus(promURL, cpuQuery)
 		if err != nil {
 			log.Printf("[DEBUG] Пропуск сервера %s. Ошибка Prometheus: %v\n", server.IPAddress, err)
 			continue
 		}
 
-		ramQuery := `dgop_memory_used_percent{server="alexusdot-asustufgaminga15fa506ncrfa506ncr"}`
+		ramQuery := fmt.Sprintf(`dgop_memory_used_percent{instance=~"%s(:.*)?"}`, server.IPAddress)
 		ramUsage, err := QueryPrometheus(promURL, ramQuery)
 		if err != nil {
 			log.Printf("[DEBUG] Ошибка получения RAM для %s: %v\n", server.IPAddress, err)
