@@ -1,0 +1,219 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"time"
+)
+
+type AlertState struct {
+	IsActive    bool
+	TriggeredAt time.Time
+}
+
+var activeAlerts = make(map[uint]AlertState)
+var activeMLAlerts = make(map[uint]AlertState)
+
+const (
+	ThresholdCPU  = 90.0
+	ThresholdRAM  = 95.0
+	ThresholdDisk = 95.0
+)
+
+func StartAlertWorker(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				checkMetricsForAlerts()
+			}
+		}
+	}()
+
+	log.Println("Alert Worker успешно запущен!")
+}
+
+func checkMetricsForAlerts() {
+	var servers []Server
+	DB.Find(&servers)
+
+	log.Printf("[DEBUG] Воркер запущен. Найдено серверов в БД: %d\n", len(servers))
+
+	promURL := os.Getenv("PROMETHEUS_URL")
+	if promURL == "" {
+		log.Println("Ошибка: не задан PROMETHEUS_URL")
+		return
+	}
+
+	for _, server := range servers {
+		cpuQuery := fmt.Sprintf(`dgop_cpu_usage_percent{instance=~"%s(:.*)?"}`, server.IPAddress)
+		cpuUsage, err := QueryPrometheus(promURL, cpuQuery)
+		if err != nil {
+			log.Printf("[DEBUG] Пропуск сервера %s. Ошибка Prometheus: %v\n", server.IPAddress, err)
+			continue
+		}
+
+		ramQuery := fmt.Sprintf(`dgop_memory_used_percent{instance=~"%s(:.*)?"}`, server.IPAddress)
+		ramUsage, err := QueryPrometheus(promURL, ramQuery)
+		if err != nil {
+			log.Printf("[DEBUG] Ошибка получения RAM для %s: %v\n", server.IPAddress, err)
+			continue
+		}
+
+		log.Printf("[DEBUG] Успех! Сервер %s -> CPU: %.2f%%, RAM: %.2f%%\n", server.IPAddress, cpuUsage, ramUsage)
+
+		currentMetric := SystemMetric{
+			ServerID: server.ID,
+			CPU:      cpuUsage,
+			RAM:      ramUsage,
+		}
+
+		if err := DB.Create(&currentMetric).Error; err != nil {
+			log.Printf("[ERROR] Не удалось сохранить метрику в БД для %s: %v\n", server.IPAddress, err)
+		}
+
+		realtimeData := map[string]interface{}{
+			"type": "metric",
+			"id":   server.ID,
+			"ip":   server.IPAddress,
+			"cpu":  currentMetric.CPU,
+			"ram":  currentMetric.RAM,
+		}
+
+		metricBytes, _ := json.Marshal(realtimeData)
+		BroadcastAlert(metricBytes)
+
+		mlURL := os.Getenv("ML_API_URL")
+		if mlURL != "" {
+			payload := MLPayload{
+				CPU:  currentMetric.CPU,
+				RAM:  currentMetric.RAM,
+				Disk: 0.0, Temperature: 0.0, CoreDiff: 0.0, PPS: 0.0, BPS: 0.0,
+			}
+
+			isAnomaly, score, err := checkMLAnomaly(mlURL, payload)
+			alreadyActive := activeMLAlerts[server.ID].IsActive
+
+			if err == nil && isAnomaly {
+				log.Printf("[DEBUG ML STATE] ServerID: %d, IP: %s, isAnomaly: %v, alreadyActive: %v", server.ID, server.IPAddress, isAnomaly, alreadyActive)
+				if !alreadyActive {
+					log.Printf("🤖 [ML АНОМАЛИЯ] Сервер %s ведет себя подозрительно! Score: %.2f", server.IPAddress, score)
+
+					alertData := map[string]interface{}{
+						"server_id": server.IPAddress,
+						"cpu":       currentMetric.CPU,
+						"ram":       currentMetric.RAM,
+						"severity":  "critical",
+						"message":   "ML-модель зафиксировала аномалию!",
+					}
+					jsonBytes, _ := json.Marshal(alertData)
+					BroadcastAlert(jsonBytes)
+
+					newAlert := AlertLog{
+						ServerID: server.ID,
+						ServerIP: server.IPAddress,
+						Type:     "CRITICAL",
+						CPU:      currentMetric.CPU,
+						RAM:      currentMetric.RAM,
+						Message:  "ML-модель зафиксировала аномалию!",
+					}
+					DB.Create(&newAlert)
+
+					activeMLAlerts[server.ID] = AlertState{IsActive: true, TriggeredAt: time.Now()}
+				}
+
+			} else if err == nil && !isAnomaly {
+				if alreadyActive {
+					log.Printf("✅ [ML RESOLVED] Сервер %s вернулся в норму.", server.IPAddress)
+
+					alertData := map[string]interface{}{
+						"server_id": server.IPAddress,
+						"cpu":       currentMetric.CPU,
+						"ram":       currentMetric.RAM,
+						"severity":  "resolved",
+						"message":   "Поведение сервера стабилизировалось",
+					}
+					jsonBytes, _ := json.Marshal(alertData)
+					BroadcastAlert(jsonBytes)
+
+					resolvedAlert := AlertLog{
+						ServerID: server.ID,
+						ServerIP: server.IPAddress,
+						Type:     "RESOLVED",
+						CPU:      currentMetric.CPU,
+						RAM:      currentMetric.RAM,
+						Message:  "Поведение сервера стабилизировалось",
+					}
+					DB.Create(&resolvedAlert)
+
+					activeMLAlerts[server.ID] = AlertState{IsActive: false}
+				}
+			} else if err != nil {
+				log.Printf("[DEBUG] ML сервис недоступен: %v", err)
+			}
+		}
+
+		state := activeAlerts[server.ID]
+
+		if currentMetric.CPU > ThresholdCPU || currentMetric.RAM > ThresholdRAM {
+			if !state.IsActive {
+				log.Printf("🔥 [CRITICAL] СРАБОТАЛ АЛЕРТ! CPU: %.2f%% > Порога %.2f%%", currentMetric.CPU, ThresholdCPU)
+				activeAlerts[server.ID] = AlertState{IsActive: true, TriggeredAt: time.Now()}
+				triggerAlert(server, currentMetric)
+			}
+		} else {
+			if state.IsActive {
+				log.Printf("✅ [RESOLVED] Нагрузка спала. CPU: %.2f%%", currentMetric.CPU)
+				activeAlerts[server.ID] = AlertState{IsActive: false}
+				resolveAlert(server)
+			}
+		}
+	}
+}
+
+type AlertMessage struct {
+	Type       string  `json:"type"`
+	ServerName string  `json:"server_name"`
+	IPAddress  string  `json:"ip_address"`
+	CPU        float64 `json:"cpu"`
+	RAM        float64 `json:"ram"`
+	Message    string  `json:"message"`
+}
+
+func triggerAlert(server Server, metric SystemMetric) {
+	log.Printf("[CRITICAL] Сервер %s превысил пороги!\n", server.Name)
+
+	msg := AlertMessage{
+		Type:       "CRITICAL",
+		ServerName: server.Name,
+		IPAddress:  server.IPAddress,
+		CPU:        metric.CPU,
+		RAM:        metric.RAM,
+		Message:    "Превышение допустимой нагрузки на ресурсы",
+	}
+
+	jsonData, err := json.Marshal(msg)
+	if err == nil {
+		RDB.Publish(Ctx, "alerts_channel", jsonData)
+	}
+}
+
+func resolveAlert(server Server) {
+	log.Printf("[RESOLVED] Сервер %s вернулся в штатный режим.\n", server.Name)
+
+	msg := AlertMessage{
+		Type:       "RESOLVED",
+		ServerName: server.Name,
+		IPAddress:  server.IPAddress,
+		Message:    "Нагрузка вернулась в норму",
+	}
+
+	jsonData, err := json.Marshal(msg)
+	if err == nil {
+		RDB.Publish(Ctx, "alerts_channel", jsonData)
+	}
+}
